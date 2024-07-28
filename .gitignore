@@ -369,4 +369,6 @@ FodyWeavers.xsd
 
 # Verify
 *.received.*
+*.miz
+
 
