@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Merlin": {
+      "commandName": "Project",
+      "commandLineArgs": "merge -s C:\\Sources\\goatreview\\Goat.Utility -p *.cs !**/obj/ -o GoatUtility"
+    }
+  }
+}

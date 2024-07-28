@@ -1,13 +1,8 @@
-﻿using System.Text;
-using CommandLine;
+﻿using CommandLine;
 using Goat.Utility.Merlin.Lib;
-using Microsoft.Extensions.Logging;
-
 using Merlin;
-using CommandLine.Text;
-using Microsoft.Win32;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Logging.Console;
+using Microsoft.Extensions.Logging;
+using System.Text;
 
 using var loggerFactory = LoggerFactory.Create(builder =>
 {
@@ -66,13 +61,21 @@ static async Task<int> MergeFilesAsync(MergeOptions opts,ILogger logger)
     try
     {
         var files = FileManager.GetFilesToMerge(opts.SourceDirectory, opts.Patterns ?? []);
-        await fileManager.MergeFilesAsync(files, opts.OutputFile, opts.Encoding ?? Encoding.UTF8.EncodingName);
-        logger.LogInformation($"Merged {files.Count} files into {opts.OutputFile}");
+        
+        var outputFile = opts.OutputFile;
+        bool hasNoExtension = string.IsNullOrEmpty(Path.GetExtension(outputFile));
+        if (hasNoExtension)
+        {
+            outputFile += ".miz";
+        }
+
+        await fileManager.MergeFilesAsync(files, outputFile, opts.Encoding ?? Encoding.UTF8.EncodingName);
+        logger.LogInformation($"Merged {files.Count} files into {outputFile}");
         return 0;
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "An error occurred during the merge operation");
+        logger.LogError($"An error occurred during the merge operation {ex.Message}");
         return 1;
     }
 }
