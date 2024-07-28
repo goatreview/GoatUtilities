@@ -1,26 +1,25 @@
-# Merlin - File Management Utility
+# Merlin File Manager
 
-Merlin is a versatile command-line utility for managing and manipulating files. It provides functionality to merge multiple files into a single file and extract files from a merged file back into separate files.
+Merlin is a powerful utility for merging and extracting files, designed to simplify file management tasks in software development projects.
 
 ## Features
 
 - Merge multiple files into a single file
-- Extract files from a merged file
-- Include/exclude files based on patterns
-- Register/unregister the application in the system PATH
-- Customizable file encoding support
+- Extract content from a merged file into separate files
+- Use GitIgnore-style patterns to include or exclude files
+- Register the application in the system PATH for easy access
 
 ## Installation
 
 1. Download the latest release from the [releases page](https://github.com/yourusername/merlin/releases).
-2. Extract the zip file to a directory of your choice.
+2. Extract the downloaded archive to a directory of your choice.
 3. (Optional) Run `merlin register` to add the application to your system PATH.
 
 ## Usage
 
-Merlin supports the following commands:
+### Merging Files
 
-### Merge Files
+To merge files, use the `merge` command:
 
 ```
 merlin merge -s <source_directory> -o <output_file> [-p <patterns>] [-e <encoding>]
@@ -28,10 +27,23 @@ merlin merge -s <source_directory> -o <output_file> [-p <patterns>] [-e <encodin
 
 - `-s, --source`: Source directory containing the files to merge (required)
 - `-o, --output`: Output file path for the merged content (required)
-- `-p, --patterns`: File patterns to include/exclude (e.g., `*.cs`, `!*Test.cs`)
-- `-e, --encoding`: Encoding to use for reading/writing files (default: utf-8)
+- `-p, --patterns`: File patterns to include/exclude (optional)
+- `-e, --encoding`: Encoding to use for reading/writing files (optional, default: utf-8)
 
-### Extract Files
+#### Example: Merging C# files excluding obj and bin directories
+
+```
+merlin merge -s ./project -o merged_code.miz -p *.cs !obj/ !bin/
+```
+
+This command will:
+1. Look for all `.cs` files in the `./project` directory and its subdirectories.
+2. Exclude any files in `obj/` and `bin/` directories.
+3. Merge the matching files into `merged_code.miz`.
+
+### Extracting Files
+
+To extract files from a merged file, use the `extract` command:
 
 ```
 merlin extract -i <input_file> -o <output_directory> [-e <encoding>]
@@ -39,40 +51,42 @@ merlin extract -i <input_file> -o <output_directory> [-e <encoding>]
 
 - `-i, --input`: Input file to extract (required)
 - `-o, --output`: Output directory for extracted files (required)
-- `-e, --encoding`: Encoding to use for reading/writing files (default: utf-8)
+- `-e, --encoding`: Encoding to use for reading/writing files (optional, default: utf-8)
 
-### Register/Unregister
+#### Example: Extracting files from a merged file
 
 ```
-merlin register [-u]
+merlin extract -i merged_code.miz -o ./extracted_project
 ```
 
-- `-u, --unregister`: Unregister the application from the system PATH
+This command will extract all files from `merged_code.miz` into the `./extracted_project` directory.
 
-## Examples
+### Registering the Application
 
-1. Merge all .cs files in the current directory, excluding test files:
-   ```
-   merlin merge -s . -o merged.txt -p *.cs !*Test.cs
-   ```
+To add Merlin to your system PATH:
 
-2. Extract files from a merged file:
-   ```
-   merlin extract -i merged.txt -o extracted_files
-   ```
+```
+merlin register
+```
 
-3. Register Merlin in the system PATH:
-   ```
-   merlin register
-   ```
+To remove Merlin from your system PATH:
 
-## Building from Source
+```
+merlin register -u
+```
 
-1. Ensure you have .NET 8.0 SDK installed.
-2. Clone the repository: `git clone https://github.com/yourusername/merlin.git`
-3. Navigate to the project directory: `cd merlin`
-4. Build the project: `dotnet build -c Release`
-5. Run the application: `dotnet run --project Merlin/Merlin.csproj`
+## File Patterns
+
+Merlin supports GitIgnore-style patterns for including and excluding files:
+
+- Use `*` to match any number of characters within a filename or directory
+- Use `**` to match any number of directories
+- Prefix a pattern with `!` to negate it (exclude matching files)
+
+Examples:
+- `*.cs`: Include all C# files
+- `!obj/`: Exclude the `obj` directory and its contents
+- `**/*.txt`: Include all .txt files in any subdirectory
 
 ## Contributing
 
