@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.11.34909.67
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Merlin", "Merlin\Merlin.csproj", "{B297EDE6-CBC2-40BF-8F8C-A6525603A998}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Goat.Utility.Merlin.Lib", "Goat.Utility.Merlin.Lib\Goat.Utility.Merlin.Lib.csproj", "{1037BEFE-0A0C-49CF-8C39-F049266462FE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B297EDE6-CBC2-40BF-8F8C-A6525603A998}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B297EDE6-CBC2-40BF-8F8C-A6525603A998}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B297EDE6-CBC2-40BF-8F8C-A6525603A998}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B297EDE6-CBC2-40BF-8F8C-A6525603A998}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1037BEFE-0A0C-49CF-8C39-F049266462FE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1037BEFE-0A0C-49CF-8C39-F049266462FE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1037BEFE-0A0C-49CF-8C39-F049266462FE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1037BEFE-0A0C-49CF-8C39-F049266462FE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {09B1865D-A090-4E50-B5D2-9B9007762105}
+	EndGlobalSection
+EndGlobal
