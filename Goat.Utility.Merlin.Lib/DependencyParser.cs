@@ -200,10 +200,17 @@ namespace Goat.Utility.Merlin.Lib
             }
         }
 
+
+        private static string GetNamespace(SyntaxNode node)
+        {
+            var namespaceDeclaration = node.Ancestors().OfType<NamespaceDeclarationSyntax>().FirstOrDefault();
+            if (namespaceDeclaration != null) return namespaceDeclaration?.Name.ToString() ?? string.Empty;
+            var fileScopedNamespaceDeclaration = node.Ancestors().OfType<FileScopedNamespaceDeclarationSyntax>().FirstOrDefault();
+            return fileScopedNamespaceDeclaration?.Name.ToString() ?? string.Empty;
+        }
         private static string GetFullClassName(ClassDeclarationSyntax classDeclaration)
         {
-            var namespaceDeclaration = classDeclaration.Ancestors().OfType<NamespaceDeclarationSyntax>().FirstOrDefault();
-            string namespaceName = namespaceDeclaration?.Name.ToString() ?? string.Empty;
+            var namespaceName = GetNamespace(classDeclaration);
             return string.IsNullOrEmpty(namespaceName) ? classDeclaration.Identifier.Text : $"{namespaceName}.{classDeclaration.Identifier.Text}";
         }
 
@@ -215,8 +222,7 @@ namespace Goat.Utility.Merlin.Lib
             }
             else
             {
-                var namespaceDeclaration = typeSyntax.Ancestors().OfType<NamespaceDeclarationSyntax>().FirstOrDefault();
-                string namespaceName = namespaceDeclaration?.Name.ToString() ?? string.Empty;
+                var namespaceName = GetNamespace(typeSyntax);
                 // If symbol is null, try to get the name directly from the syntax
                 return string.IsNullOrEmpty(namespaceName) ? typeSyntax.ToString() : $"{namespaceName}.{typeSyntax.ToString()}";
             }
