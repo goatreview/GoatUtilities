@@ -1,19 +1,10 @@
-﻿using System.ComponentModel.DataAnnotations;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using System.Text;
-using System.Text.RegularExpressions;
-using System.Linq;
 
 namespace Goat.Utility.Merlin.Lib
 {
-    public class FileManager
+    public class FileManager(ILogger logger)
     {
-        private readonly ILogger _logger;
-
-        public FileManager(ILogger logger)
-        {
-            _logger = logger;
-        }
 
         public static List<string> GetFilesToMerge(string sourceDirectory, IEnumerable<string> patterns)
         {
@@ -34,12 +25,19 @@ namespace Goat.Utility.Merlin.Lib
                     .ToList();
         }
 
+        public static IEnumerable<string> NormalizeFileNames(string sourceDirectory, params string[] files)
+        {
+            foreach (var file in files)
+            {
+                var segments = file.Split(new[] { @"\", @"/" }, StringSplitOptions.None);
+                var currentDirectory = sourceDirectory.Split(new[] { @"\", @"/" }, StringSplitOptions.None);
+                var fileName = string.Join(@"/", segments.Skip(currentDirectory.Length));
+                yield return fileName;
+            }
+        }
         private static bool ShouldIncludeFile(string sourceDirectory,string file, List<string> includePatterns, List<string> excludePatterns)
         {
-            var segments = file.Split(new[] { @"\", @"/" }, StringSplitOptions.None);
-            var currentDirectory = sourceDirectory.Split(new[] { @"\", @"/" }, StringSplitOptions.None);
-            var fileName = string.Join(@"/", segments.Skip(currentDirectory.Length));
-           
+            var fileName = NormalizeFileNames(sourceDirectory, file).Single();           
 
             return GitIgnoreStyleMatcher.ShouldIncludeFile(fileName, includePatterns, excludePatterns);
         }
@@ -62,7 +60,7 @@ namespace Goat.Utility.Merlin.Lib
                 var segments = relativePath.Split(new[] { @"\", @"/" }, StringSplitOptions.None);
                 await writer.WriteLineAsync($"//@FileName {string.Join(@"/",segments)}");
                 await writer.WriteLineAsync(await File.ReadAllTextAsync(file, Encoding.GetEncoding(encoding)));
-                _logger.LogInformation($"Merged file: {relativePath}");
+                logger.LogInformation($"Merged file: {relativePath}");
             }
         }
 
@@ -134,7 +132,7 @@ namespace Goat.Utility.Merlin.Lib
                 Directory.CreateDirectory(directory);
 
             await File.WriteAllLinesAsync(fullPath, content, Encoding.GetEncoding(encoding));
-            _logger.LogInformation($"Extracted file: {fullPath}");
+            logger.LogInformation($"Extracted file: {fullPath}");
         }
     }
 }

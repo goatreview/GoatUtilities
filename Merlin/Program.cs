@@ -3,6 +3,7 @@ using Goat.Utility.Merlin.Lib;
 using Merlin;
 using Microsoft.Extensions.Logging;
 using System.Text;
+using static Goat.Utility.Merlin.Lib.DependencyParser;
 
 using var loggerFactory = LoggerFactory.Create(builder =>
 {
@@ -62,6 +63,19 @@ static async Task<int> MergeFilesAsync(MergeOptions opts,ILogger logger)
     {
         var files = FileManager.GetFilesToMerge(opts.SourceDirectory, opts.Patterns ?? []);
         
+        if (!string.IsNullOrWhiteSpace(opts.BaseClass))
+        {
+            var dependencyParser = new DependencyParser(logger);
+            var dependencyInfo = dependencyParser.GetClassDependencies(files, opts.BaseClass!);
+
+            files = dependencyInfo.AllDependencies
+                .Select(@class => dependencyInfo.FullClassNameToFile[@class])
+                .Distinct()
+                .ToList();
+
+
+        }
+    
         var outputFile = opts.OutputFile;
         bool hasNoExtension = string.IsNullOrEmpty(Path.GetExtension(outputFile));
         if (hasNoExtension)
