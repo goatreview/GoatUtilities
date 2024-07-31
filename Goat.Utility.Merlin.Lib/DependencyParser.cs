@@ -5,8 +5,15 @@ using Microsoft.Extensions.Logging;
 
 namespace Goat.Utility.Merlin.Lib
 {
-    public class DependencyParser(ILogger logger)
+    public class DependencyParser
     {
+        private readonly ILogger logger;
+
+        public DependencyParser(ILogger logger)
+        {
+            this.logger = logger;
+        }
+
         public class DependencyInfo
         {
             public HashSet<string> Candidates { get; } = new HashSet<string>();
@@ -16,6 +23,7 @@ namespace Goat.Utility.Merlin.Lib
             public HashSet<string> FieldDependencies { get; } = new HashSet<string>();
             public HashSet<string> PropertyDependencies { get; } = new HashSet<string>();
             public HashSet<string> MethodDependencies { get; } = new HashSet<string>();
+            public HashSet<string> EnumDependencies { get; } = new HashSet<string>();
             public Dictionary<string, string> FullClassNameToFile { get; } = new Dictionary<string, string>();
         }
 
@@ -32,7 +40,8 @@ namespace Goat.Utility.Merlin.Lib
             logger.LogInformation($"Searching dependencies for class {className}:");
 
             var fullClassNameToClassDeclaration = new Dictionary<string, ClassDeclarationSyntax>();
-            
+            var fullEnumNameToEnumDeclaration = new Dictionary<string, EnumDeclarationSyntax>();
+
             foreach (var file in files)
             {
                 if (string.IsNullOrWhiteSpace(file))
@@ -54,7 +63,17 @@ namespace Goat.Utility.Merlin.Lib
                     }
 
                     fullClassNameToClassDeclaration[fullClassName] = classDeclaration;
-                    dependencyInfo.FullClassNameToFile.Add(fullClassName,file);
+                    dependencyInfo.FullClassNameToFile.Add(fullClassName, file);
+                }
+
+                foreach (var enumDeclaration in root.DescendantNodes().OfType<EnumDeclarationSyntax>())
+                {
+                    var fullEnumName = GetFullEnumName(enumDeclaration);
+                    fullEnumNameToEnumDeclaration[fullEnumName] = enumDeclaration;
+                    dependencyInfo.FullClassNameToFile.Add(fullEnumName, file);
+
+                    AddDependencyIfPresent(fullEnumName, dependencyInfo.EnumDependencies, dependencyInfo.AllDependencies,
+                        fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
                 }
             }
 
@@ -66,22 +85,22 @@ namespace Goat.Utility.Merlin.Lib
 
             foreach (var classCandidate in dependencyInfo.Candidates)
             {
-                AnalyzeDependencies(fullClassNameToClassDeclaration[classCandidate], dependencyInfo, fullClassNameToClassDeclaration);
+                AnalyzeDependencies(fullClassNameToClassDeclaration[classCandidate], dependencyInfo, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
             }
 
             logger.LogInformation($"Found {dependencyInfo.Candidates.Count} candidates and {dependencyInfo.AllDependencies.Count} dependencies for class {className}");
             return dependencyInfo;
         }
 
-        private static void AnalyzeDependencies(ClassDeclarationSyntax classDeclaration, DependencyInfo dependencyInfo,
-            Dictionary<string, ClassDeclarationSyntax> fullClassNameToClassDeclaration)
+        private void AnalyzeDependencies(ClassDeclarationSyntax classDeclaration, DependencyInfo dependencyInfo,
+            Dictionary<string, ClassDeclarationSyntax> fullClassNameToClassDeclaration,
+            Dictionary<string, EnumDeclarationSyntax> fullEnumNameToEnumDeclaration)
         {
             var compilation = CSharpCompilation.Create("TempAssembly")
                 .AddReferences(MetadataReference.CreateFromFile(typeof(object).Assembly.Location))
                 .AddSyntaxTrees(classDeclaration.SyntaxTree);
 
             var semanticModel = compilation.GetSemanticModel(classDeclaration.SyntaxTree);
-            //var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration);
 
             // Analyze parent classes
             if (classDeclaration.BaseList != null)
@@ -92,12 +111,12 @@ namespace Goat.Utility.Merlin.Lib
                     string fullTypeName = GetFullTypeName(symbol, baseType.Type);
 
                     AddDependencyIfPresent(fullTypeName, dependencyInfo.ParentClasses, dependencyInfo.AllDependencies,
-                        fullClassNameToClassDeclaration);
+                        fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
 
                     // Recursively analyze parent class dependencies
                     if (fullClassNameToClassDeclaration.TryGetValue(fullTypeName, out var parentClassDeclaration))
                     {
-                        AnalyzeDependencies(parentClassDeclaration, dependencyInfo, fullClassNameToClassDeclaration);
+                        AnalyzeDependencies(parentClassDeclaration, dependencyInfo, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
                     }
                 }
             }
@@ -109,15 +128,9 @@ namespace Goat.Utility.Merlin.Lib
                 {
                     foreach (var baseType in potentialDerivedClass.BaseList.Types)
                     {
-                        //var symbol = semanticModel.GetSymbolInfo(baseType.Type);
-                        ////string fullTypeName = GetFullTypeName(symbol, baseType.Type);
-
-                        //if (fullTypeName == GetFullClassName(classDeclaration))
-                        //{
-                            string derivedClassName = GetFullClassName(potentialDerivedClass);
-                            AddDependencyIfPresent(derivedClassName, dependencyInfo.DerivedClasses, dependencyInfo.AllDependencies,
-                                fullClassNameToClassDeclaration);
-                        //}
+                        string derivedClassName = GetFullClassName(potentialDerivedClass);
+                        AddDependencyIfPresent(derivedClassName, dependencyInfo.DerivedClasses, dependencyInfo.AllDependencies,
+                            fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
                     }
                 }
             }
@@ -126,38 +139,46 @@ namespace Goat.Utility.Merlin.Lib
             foreach (var field in classDeclaration.DescendantNodes().OfType<FieldDeclarationSyntax>())
             {
                 AnalyzeTypeSyntax(field.Declaration.Type, semanticModel, dependencyInfo.FieldDependencies,
-                    dependencyInfo.AllDependencies, fullClassNameToClassDeclaration);
+                    dependencyInfo.AllDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
             }
 
             // Analyze properties
             foreach (var property in classDeclaration.DescendantNodes().OfType<PropertyDeclarationSyntax>())
             {
                 AnalyzeTypeSyntax(property.Type, semanticModel, dependencyInfo.PropertyDependencies,
-                    dependencyInfo.AllDependencies, fullClassNameToClassDeclaration);
+                    dependencyInfo.AllDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
             }
 
             // Analyze methods
             foreach (var method in classDeclaration.DescendantNodes().OfType<MethodDeclarationSyntax>())
             {
                 AnalyzeTypeSyntax(method.ReturnType, semanticModel, dependencyInfo.MethodDependencies,
-                    dependencyInfo.AllDependencies, fullClassNameToClassDeclaration);
+                    dependencyInfo.AllDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
 
                 foreach (var parameter in method.ParameterList.Parameters)
                 {
                     AnalyzeTypeSyntax(parameter.Type, semanticModel, dependencyInfo.MethodDependencies,
-                        dependencyInfo.AllDependencies, fullClassNameToClassDeclaration);
+                        dependencyInfo.AllDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
                 }
 
                 var localVariables = method.DescendantNodes().OfType<VariableDeclarationSyntax>();
                 foreach (var variable in localVariables)
                 {
                     AnalyzeTypeSyntax(variable.Type, semanticModel, dependencyInfo.MethodDependencies,
-                        dependencyInfo.AllDependencies, fullClassNameToClassDeclaration);
+                        dependencyInfo.AllDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
                 }
+            }
+
+            // Analyze enums
+            foreach (var enumDeclaration in classDeclaration.DescendantNodes().OfType<EnumDeclarationSyntax>())
+            {
+                string fullEnumName = GetFullEnumName(enumDeclaration);
+                AddDependencyIfPresent(fullEnumName, dependencyInfo.EnumDependencies, dependencyInfo.AllDependencies,
+                    fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
             }
         }
 
-        private static void AnalyzeTypeSyntax(TypeSyntax typeSyntax, SemanticModel semanticModel, HashSet<string> specificDependencies, HashSet<string> allDependencies, Dictionary<string, ClassDeclarationSyntax> fullClassNameToClassDeclaration)
+        private void AnalyzeTypeSyntax(TypeSyntax typeSyntax, SemanticModel semanticModel, HashSet<string> specificDependencies, HashSet<string> allDependencies, Dictionary<string, ClassDeclarationSyntax> fullClassNameToClassDeclaration, Dictionary<string, EnumDeclarationSyntax> fullEnumNameToEnumDeclaration)
         {
             var typeInfo = semanticModel.GetTypeInfo(typeSyntax);
             string fullTypeName;
@@ -165,14 +186,14 @@ namespace Goat.Utility.Merlin.Lib
             if (typeInfo.Type != null)
             {
                 fullTypeName = typeInfo.Type.ToDisplayString();
-                AddDependencyIfPresent(fullTypeName, specificDependencies, allDependencies, fullClassNameToClassDeclaration);
+                AddDependencyIfPresent(fullTypeName, specificDependencies, allDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
 
                 // Handle generic types
                 if (typeInfo.Type is INamedTypeSymbol namedTypeSymbol && namedTypeSymbol.IsGenericType)
                 {
                     foreach (var typeArgument in namedTypeSymbol.TypeArguments)
                     {
-                        AddDependencyIfPresent(typeArgument.ToDisplayString(), specificDependencies, allDependencies, fullClassNameToClassDeclaration);
+                        AddDependencyIfPresent(typeArgument.ToDisplayString(), specificDependencies, allDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
                     }
                 }
             }
@@ -180,11 +201,11 @@ namespace Goat.Utility.Merlin.Lib
             {
                 // If typeInfo.Type is null, try to get the name directly from the syntax
                 fullTypeName = typeSyntax.ToString();
-                AddDependencyIfPresent(fullTypeName, specificDependencies, allDependencies, fullClassNameToClassDeclaration);
+                AddDependencyIfPresent(fullTypeName, specificDependencies, allDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
             }
         }
 
-        private static void AddDependencyIfPresent(string fullTypeName, HashSet<string> specificDependencies, HashSet<string> allDependencies, Dictionary<string, ClassDeclarationSyntax> fullClassNameToClassDeclaration)
+        private void AddDependencyIfPresent(string fullTypeName, HashSet<string> specificDependencies, HashSet<string> allDependencies, Dictionary<string, ClassDeclarationSyntax> fullClassNameToClassDeclaration, Dictionary<string, EnumDeclarationSyntax> fullEnumNameToEnumDeclaration)
         {
             // Remove any generic type arguments if present
             int indexOfOpenBracket = fullTypeName.IndexOf('<');
@@ -193,13 +214,12 @@ namespace Goat.Utility.Merlin.Lib
                 fullTypeName = fullTypeName.Substring(0, indexOfOpenBracket);
             }
 
-            if (fullClassNameToClassDeclaration.ContainsKey(fullTypeName))
+            if (fullClassNameToClassDeclaration.ContainsKey(fullTypeName) || fullEnumNameToEnumDeclaration.ContainsKey(fullTypeName))
             {
                 specificDependencies.Add(fullTypeName);
                 allDependencies.Add(fullTypeName);
             }
         }
-
 
         private static string GetNamespace(SyntaxNode node)
         {
@@ -208,10 +228,17 @@ namespace Goat.Utility.Merlin.Lib
             var fileScopedNamespaceDeclaration = node.Ancestors().OfType<FileScopedNamespaceDeclarationSyntax>().FirstOrDefault();
             return fileScopedNamespaceDeclaration?.Name.ToString() ?? string.Empty;
         }
+
         private static string GetFullClassName(ClassDeclarationSyntax classDeclaration)
         {
             var namespaceName = GetNamespace(classDeclaration);
             return string.IsNullOrEmpty(namespaceName) ? classDeclaration.Identifier.Text : $"{namespaceName}.{classDeclaration.Identifier.Text}";
+        }
+
+        private static string GetFullEnumName(EnumDeclarationSyntax enumDeclaration)
+        {
+            var namespaceName = GetNamespace(enumDeclaration);
+            return string.IsNullOrEmpty(namespaceName) ? enumDeclaration.Identifier.Text : $"{namespaceName}.{enumDeclaration.Identifier.Text}";
         }
 
         private static string GetFullTypeName(ISymbol symbol, TypeSyntax typeSyntax)

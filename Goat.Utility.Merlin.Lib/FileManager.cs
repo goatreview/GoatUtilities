@@ -54,7 +54,7 @@ namespace Goat.Utility.Merlin.Lib
 
             await WriteFileHeader(writer, files);
 
-            foreach (var file in files)
+            foreach (var file in files.OrderBy(x=>x))
             {
                 var relativePath = Path.GetRelativePath(Directory.GetCurrentDirectory(), file);
                 var segments = relativePath.Split(new[] { @"\", @"/" }, StringSplitOptions.None);
