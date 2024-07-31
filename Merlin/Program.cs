@@ -3,7 +3,6 @@ using Goat.Utility.Merlin.Lib;
 using Merlin;
 using Microsoft.Extensions.Logging;
 using System.Text;
-using static Goat.Utility.Merlin.Lib.DependencyParser;
 
 using var loggerFactory = LoggerFactory.Create(builder =>
 {

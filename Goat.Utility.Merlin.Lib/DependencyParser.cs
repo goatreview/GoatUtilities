@@ -56,14 +56,17 @@ namespace Goat.Utility.Merlin.Lib
                 {
                     var fullClassName = GetFullClassName(classDeclaration);
 
+                    fullClassNameToClassDeclaration[fullClassName] = classDeclaration;
+                    dependencyInfo.FullClassNameToFile.Add(fullClassName, file);
+
                     if (string.Equals(classDeclaration.Identifier.Text, className, StringComparison.InvariantCultureIgnoreCase) ||
                         string.Equals(fullClassName, className, StringComparison.InvariantCultureIgnoreCase))
                     {
-                        dependencyInfo.Candidates.Add(fullClassName);
+                        //dependencyInfo.Candidates.Add(fullClassName);
+                        AddDependencyIfPresent(fullClassName, dependencyInfo.Candidates, dependencyInfo.AllDependencies,
+                            fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
                     }
 
-                    fullClassNameToClassDeclaration[fullClassName] = classDeclaration;
-                    dependencyInfo.FullClassNameToFile.Add(fullClassName, file);
                 }
 
                 foreach (var enumDeclaration in root.DescendantNodes().OfType<EnumDeclarationSyntax>())
