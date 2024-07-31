@@ -181,33 +181,69 @@ namespace Goat.Utility.Merlin.Lib
             }
         }
 
+
         private void AnalyzeTypeSyntax(TypeSyntax typeSyntax, SemanticModel semanticModel, HashSet<string> specificDependencies, HashSet<string> allDependencies, Dictionary<string, ClassDeclarationSyntax> fullClassNameToClassDeclaration, Dictionary<string, EnumDeclarationSyntax> fullEnumNameToEnumDeclaration)
         {
-            var typeInfo = semanticModel.GetTypeInfo(typeSyntax);
-            string fullTypeName;
 
+            var typeInfo = semanticModel.GetTypeInfo(typeSyntax);
+            if (typeInfo.Type?.SpecialType == SpecialType.System_Void)
+            {
+                return;
+            }
+            
+            string fullTypeName;
             if (typeInfo.Type != null)
             {
-                fullTypeName = typeInfo.Type.ToDisplayString();
+                fullTypeName = typeInfo.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 AddDependencyIfPresent(fullTypeName, specificDependencies, allDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
-
                 // Handle generic types
                 if (typeInfo.Type is INamedTypeSymbol namedTypeSymbol && namedTypeSymbol.IsGenericType)
                 {
                     foreach (var typeArgument in namedTypeSymbol.TypeArguments)
                     {
-                        AddDependencyIfPresent(typeArgument.ToDisplayString(), specificDependencies, allDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
+                        AddDependencyIfPresent(typeArgument.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), specificDependencies, allDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
                     }
                 }
             }
             else
             {
-                // If typeInfo.Type is null, try to get the name directly from the syntax
-                fullTypeName = typeSyntax.ToString();
+                // If typeInfo.Type is null, try to get the symbol info
+                var symbolInfo = semanticModel.GetSymbolInfo(typeSyntax);
+                if (symbolInfo.Symbol != null)
+                {
+                    fullTypeName = symbolInfo.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                }
+                else
+                {
+                    // If we can't get the symbol, resolve the type name manually
+                    fullTypeName = ResolveFullTypeName(typeSyntax, semanticModel);
+                }
                 AddDependencyIfPresent(fullTypeName, specificDependencies, allDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
             }
         }
 
+        private string ResolveFullTypeName(TypeSyntax typeSyntax, SemanticModel semanticModel)
+        {
+            // Start with the type name from the syntax
+            string typeName = typeSyntax.ToString();
+
+            // Get the containing symbol (could be a namespace, class, or method)
+            var containingSymbol = semanticModel.GetEnclosingSymbol(typeSyntax.SpanStart);
+
+            while (containingSymbol != null)
+            {
+                if (containingSymbol is INamespaceSymbol || containingSymbol is INamedTypeSymbol)
+                {
+                    // Prepend the containing namespace or type name
+                    typeName = $"{containingSymbol.Name}.{typeName}";
+                }
+
+                // Move up to the parent symbol
+                containingSymbol = containingSymbol.ContainingSymbol;
+            }
+
+            return typeName;
+        }
         private void AddDependencyIfPresent(string fullTypeName, HashSet<string> specificDependencies, HashSet<string> allDependencies, Dictionary<string, ClassDeclarationSyntax> fullClassNameToClassDeclaration, Dictionary<string, EnumDeclarationSyntax> fullEnumNameToEnumDeclaration)
         {
             // Remove any generic type arguments if present
