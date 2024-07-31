@@ -65,10 +65,10 @@ static async Task<int> MergeFilesAsync(MergeOptions opts,ILogger logger)
         if (!string.IsNullOrWhiteSpace(opts.BaseClass))
         {
             var dependencyParser = new DependencyParser(logger);
-            var dependencyInfo = dependencyParser.GetClassDependencies(files, opts.BaseClass!);
+            var dependencyInfo = dependencyParser.GetTypeDependencies(files, opts.BaseClass!);
 
             files = dependencyInfo.AllDependencies
-                .Select(@class => dependencyInfo.FullClassNameToFile[@class])
+                .Select(@class => dependencyInfo.FullTypeNameToFile[@class])
                 .Distinct()
                 .ToList();
 

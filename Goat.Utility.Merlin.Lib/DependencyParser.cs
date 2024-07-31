@@ -24,254 +24,215 @@ namespace Goat.Utility.Merlin.Lib
             public HashSet<string> PropertyDependencies { get; } = new HashSet<string>();
             public HashSet<string> MethodDependencies { get; } = new HashSet<string>();
             public HashSet<string> EnumDependencies { get; } = new HashSet<string>();
-            public Dictionary<string, string> FullClassNameToFile { get; } = new Dictionary<string, string>();
+            public Dictionary<string, string> FullTypeNameToFile { get; } = new Dictionary<string, string>();
+            public Dictionary<string, TypeDeclarationSyntax> FullTypeNameToDeclaration { get; } = new Dictionary<string, TypeDeclarationSyntax>();
+            public Dictionary<string, EnumDeclarationSyntax> FullEnumNameToEnumDeclaration { get; } = new Dictionary<string, EnumDeclarationSyntax>();
+            public Dictionary<string, HashSet<string>> FileToUsings { get; } = new Dictionary<string, HashSet<string>>();
+            public HashSet<string> ParsedFiles { get; } = new HashSet<string>();
         }
 
-        public DependencyInfo GetClassDependencies(string path, string className)
-        {
-            var files = Directory.GetFiles(path, "*.cs", SearchOption.AllDirectories);
-            return GetClassDependencies(files, className);
-        }
-
-        public DependencyInfo GetClassDependencies(IReadOnlyList<string> files, string className)
+        public DependencyInfo GetTypeDependencies(IReadOnlyList<string> files, string typeName)
         {
             var dependencyInfo = new DependencyInfo();
+            return GetTypeDependenciesRecursive(files, typeName, dependencyInfo);
+        }
 
-            logger.LogInformation($"Searching dependencies for class {className}:");
-
-            var fullClassNameToClassDeclaration = new Dictionary<string, ClassDeclarationSyntax>();
-            var fullEnumNameToEnumDeclaration = new Dictionary<string, EnumDeclarationSyntax>();
-
+        private DependencyInfo GetTypeDependenciesRecursive(IReadOnlyList<string> files, string typeName, DependencyInfo dependencyInfo)
+        {
             foreach (var file in files)
             {
-                if (string.IsNullOrWhiteSpace(file))
+                if (string.IsNullOrWhiteSpace(file) || dependencyInfo.ParsedFiles.Contains(file))
                 {
                     continue;
                 }
 
+                dependencyInfo.ParsedFiles.Add(file);
+
                 var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(file));
                 var root = tree.GetCompilationUnitRoot();
 
-                foreach (var classDeclaration in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
+                // Collect usings
+                var usings = root.Usings.Select(u => u.Name.ToString()).ToHashSet();
+                dependencyInfo.FileToUsings[file] = usings;
+
+                foreach (var typeDeclaration in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
                 {
-                    var fullClassName = GetFullClassName(classDeclaration);
+                    var fullTypeName = GetFullTypeName(typeDeclaration);
+                    dependencyInfo.FullTypeNameToDeclaration[fullTypeName] = typeDeclaration;
+                    dependencyInfo.FullTypeNameToFile[fullTypeName] = file;
 
-                    fullClassNameToClassDeclaration[fullClassName] = classDeclaration;
-                    dependencyInfo.FullClassNameToFile.Add(fullClassName, file);
-
-                    if (string.Equals(classDeclaration.Identifier.Text, className, StringComparison.InvariantCultureIgnoreCase) ||
-                        string.Equals(fullClassName, className, StringComparison.InvariantCultureIgnoreCase))
+                    if (string.Equals(typeDeclaration.Identifier.Text, typeName, StringComparison.InvariantCultureIgnoreCase) ||
+                        string.Equals(fullTypeName, typeName, StringComparison.InvariantCultureIgnoreCase))
                     {
-                        //dependencyInfo.Candidates.Add(fullClassName);
-                        AddDependencyIfPresent(fullClassName, dependencyInfo.Candidates, dependencyInfo.AllDependencies,
-                            fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
+                        AddDependencyIfPresent(fullTypeName, dependencyInfo.Candidates, dependencyInfo.AllDependencies, dependencyInfo);
                     }
-
                 }
 
                 foreach (var enumDeclaration in root.DescendantNodes().OfType<EnumDeclarationSyntax>())
                 {
                     var fullEnumName = GetFullEnumName(enumDeclaration);
-                    fullEnumNameToEnumDeclaration[fullEnumName] = enumDeclaration;
-                    dependencyInfo.FullClassNameToFile.Add(fullEnumName, file);
-
-                    AddDependencyIfPresent(fullEnumName, dependencyInfo.EnumDependencies, dependencyInfo.AllDependencies,
-                        fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
+                    dependencyInfo.FullEnumNameToEnumDeclaration[fullEnumName] = enumDeclaration;
+                    dependencyInfo.FullTypeNameToFile[fullEnumName] = file;
                 }
             }
 
             if (dependencyInfo.Candidates.Count == 0)
             {
-                logger.LogWarning($"Class {className} not found in the provided files");
+                logger.LogWarning($"Type {typeName} not found in the provided files");
                 return dependencyInfo;
             }
 
-            foreach (var classCandidate in dependencyInfo.Candidates)
+            foreach (var typeCandidate in dependencyInfo.Candidates)
             {
-                AnalyzeDependencies(fullClassNameToClassDeclaration[classCandidate], dependencyInfo, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
+                AnalyzeDependencies(dependencyInfo.FullTypeNameToDeclaration[typeCandidate], dependencyInfo, files);
             }
 
-            logger.LogInformation($"Found {dependencyInfo.Candidates.Count} candidates and {dependencyInfo.AllDependencies.Count} dependencies for class {className}");
             return dependencyInfo;
         }
 
-        private void AnalyzeDependencies(ClassDeclarationSyntax classDeclaration, DependencyInfo dependencyInfo,
-            Dictionary<string, ClassDeclarationSyntax> fullClassNameToClassDeclaration,
-            Dictionary<string, EnumDeclarationSyntax> fullEnumNameToEnumDeclaration)
+        private void AnalyzeDependencies(TypeDeclarationSyntax typeDeclaration, DependencyInfo dependencyInfo, IReadOnlyList<string> allFiles)
         {
             var compilation = CSharpCompilation.Create("TempAssembly")
                 .AddReferences(MetadataReference.CreateFromFile(typeof(object).Assembly.Location))
-                .AddSyntaxTrees(classDeclaration.SyntaxTree);
+                .AddSyntaxTrees(typeDeclaration.SyntaxTree);
 
-            var semanticModel = compilation.GetSemanticModel(classDeclaration.SyntaxTree);
+            var semanticModel = compilation.GetSemanticModel(typeDeclaration.SyntaxTree);
+            var currentFile = dependencyInfo.FullTypeNameToFile[GetFullTypeName(typeDeclaration)];
 
-            // Analyze parent classes
-            if (classDeclaration.BaseList != null)
-            {
-                foreach (var baseType in classDeclaration.BaseList.Types)
-                {
-                    var symbol = semanticModel.GetSymbolInfo(baseType.Type).Symbol;
-                    string fullTypeName = GetFullTypeName(symbol, baseType.Type);
-
-                    AddDependencyIfPresent(fullTypeName, dependencyInfo.ParentClasses, dependencyInfo.AllDependencies,
-                        fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
-
-                    // Recursively analyze parent class dependencies
-                    if (fullClassNameToClassDeclaration.TryGetValue(fullTypeName, out var parentClassDeclaration))
-                    {
-                        AnalyzeDependencies(parentClassDeclaration, dependencyInfo, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
-                    }
-                }
-            }
-
-            // Analyze derived classes
-            foreach (var potentialDerivedClass in fullClassNameToClassDeclaration.Values)
-            {
-                if (potentialDerivedClass.BaseList != null)
-                {
-                    foreach (var baseType in potentialDerivedClass.BaseList.Types)
-                    {
-                        string derivedClassName = GetFullClassName(potentialDerivedClass);
-                        AddDependencyIfPresent(derivedClassName, dependencyInfo.DerivedClasses, dependencyInfo.AllDependencies,
-                            fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
-                    }
-                }
-            }
-
-            // Analyze fields
-            foreach (var field in classDeclaration.DescendantNodes().OfType<FieldDeclarationSyntax>())
+            // Analyze fields, properties, methods, etc.
+            foreach (var field in typeDeclaration.DescendantNodes().OfType<FieldDeclarationSyntax>())
             {
                 AnalyzeTypeSyntax(field.Declaration.Type, semanticModel, dependencyInfo.FieldDependencies,
-                    dependencyInfo.AllDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
+                    dependencyInfo.AllDependencies, currentFile, dependencyInfo, allFiles);
             }
 
-            // Analyze properties
-            foreach (var property in classDeclaration.DescendantNodes().OfType<PropertyDeclarationSyntax>())
+            foreach (var property in typeDeclaration.DescendantNodes().OfType<PropertyDeclarationSyntax>())
             {
                 AnalyzeTypeSyntax(property.Type, semanticModel, dependencyInfo.PropertyDependencies,
-                    dependencyInfo.AllDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
+                    dependencyInfo.AllDependencies, currentFile, dependencyInfo, allFiles);
             }
 
-            // Analyze methods
-            foreach (var method in classDeclaration.DescendantNodes().OfType<MethodDeclarationSyntax>())
+            foreach (var method in typeDeclaration.DescendantNodes().OfType<MethodDeclarationSyntax>())
             {
                 AnalyzeTypeSyntax(method.ReturnType, semanticModel, dependencyInfo.MethodDependencies,
-                    dependencyInfo.AllDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
+                    dependencyInfo.AllDependencies, currentFile, dependencyInfo, allFiles);
 
                 foreach (var parameter in method.ParameterList.Parameters)
                 {
                     AnalyzeTypeSyntax(parameter.Type, semanticModel, dependencyInfo.MethodDependencies,
-                        dependencyInfo.AllDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
-                }
-
-                var localVariables = method.DescendantNodes().OfType<VariableDeclarationSyntax>();
-                foreach (var variable in localVariables)
-                {
-                    AnalyzeTypeSyntax(variable.Type, semanticModel, dependencyInfo.MethodDependencies,
-                        dependencyInfo.AllDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
+                        dependencyInfo.AllDependencies, currentFile, dependencyInfo, allFiles);
                 }
             }
 
-            // Analyze enums
-            foreach (var enumDeclaration in classDeclaration.DescendantNodes().OfType<EnumDeclarationSyntax>())
+            // Analyze base types
+            if (typeDeclaration.BaseList != null)
             {
-                string fullEnumName = GetFullEnumName(enumDeclaration);
-                AddDependencyIfPresent(fullEnumName, dependencyInfo.EnumDependencies, dependencyInfo.AllDependencies,
-                    fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
+                foreach (var baseType in typeDeclaration.BaseList.Types)
+                {
+                    AnalyzeTypeSyntax(baseType.Type, semanticModel, dependencyInfo.ParentClasses,
+                        dependencyInfo.AllDependencies, currentFile, dependencyInfo, allFiles);
+                }
+            }
+
+            // For records, analyze the primary constructor parameters
+            if (typeDeclaration is RecordDeclarationSyntax recordDeclaration)
+            {
+                foreach (var parameter in recordDeclaration.ParameterList?.Parameters ?? Enumerable.Empty<ParameterSyntax>())
+                {
+                    AnalyzeTypeSyntax(parameter.Type, semanticModel, dependencyInfo.PropertyDependencies,
+                        dependencyInfo.AllDependencies, currentFile, dependencyInfo, allFiles);
+                }
             }
         }
 
-
-        private void AnalyzeTypeSyntax(TypeSyntax typeSyntax, SemanticModel semanticModel, HashSet<string> specificDependencies, HashSet<string> allDependencies, Dictionary<string, ClassDeclarationSyntax> fullClassNameToClassDeclaration, Dictionary<string, EnumDeclarationSyntax> fullEnumNameToEnumDeclaration)
+        private void AnalyzeTypeSyntax(TypeSyntax typeSyntax, SemanticModel semanticModel, HashSet<string> specificDependencies,
+            HashSet<string> allDependencies, string currentFile, DependencyInfo dependencyInfo, IReadOnlyList<string> allFiles)
         {
-
             var typeInfo = semanticModel.GetTypeInfo(typeSyntax);
             if (typeInfo.Type?.SpecialType == SpecialType.System_Void)
             {
                 return;
             }
-            
-            string fullTypeName;
-            if (typeInfo.Type != null)
+
+            string fullTypeName = ResolveFullTypeName(typeSyntax, semanticModel, currentFile, dependencyInfo);
+
+            if (!string.IsNullOrEmpty(fullTypeName))
             {
-                fullTypeName = typeInfo.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                AddDependencyIfPresent(fullTypeName, specificDependencies, allDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
-                // Handle generic types
-                if (typeInfo.Type is INamedTypeSymbol namedTypeSymbol && namedTypeSymbol.IsGenericType)
+                if (!dependencyInfo.FullTypeNameToDeclaration.ContainsKey(fullTypeName) &&
+                    !dependencyInfo.FullEnumNameToEnumDeclaration.ContainsKey(fullTypeName))
                 {
-                    foreach (var typeArgument in namedTypeSymbol.TypeArguments)
+                    // Type not found, try to parse it recursively
+                    var unparsedFiles = allFiles.Where(f => !dependencyInfo.ParsedFiles.Contains(f)).ToList();
+                    if (unparsedFiles.Any())
                     {
-                        AddDependencyIfPresent(typeArgument.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), specificDependencies, allDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
+                        GetTypeDependenciesRecursive(unparsedFiles, fullTypeName, dependencyInfo);
+                    }
+                }
+
+                AddDependencyIfPresent(fullTypeName, specificDependencies, allDependencies, dependencyInfo);
+            }
+
+            // Handle generic types
+            if (typeInfo.Type is INamedTypeSymbol namedTypeSymbol && namedTypeSymbol.IsGenericType)
+            {
+                foreach (var typeArgument in namedTypeSymbol.TypeArguments)
+                {
+                    string fullTypeArgumentName = ResolveFullTypeName(typeArgument, currentFile, dependencyInfo);
+                    if (!string.IsNullOrEmpty(fullTypeArgumentName))
+                    {
+                        AddDependencyIfPresent(fullTypeArgumentName, specificDependencies, allDependencies, dependencyInfo);
                     }
                 }
             }
-            else
-            {
-                // If typeInfo.Type is null, try to get the symbol info
-                var symbolInfo = semanticModel.GetSymbolInfo(typeSyntax);
-                if (symbolInfo.Symbol != null)
-                {
-                    fullTypeName = symbolInfo.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                }
-                else
-                {
-                    // If we can't get the symbol, resolve the type name manually
-                    fullTypeName = ResolveFullTypeName(typeSyntax, semanticModel);
-                }
-                AddDependencyIfPresent(fullTypeName, specificDependencies, allDependencies, fullClassNameToClassDeclaration, fullEnumNameToEnumDeclaration);
-            }
         }
 
-        private string ResolveFullTypeName(TypeSyntax typeSyntax, SemanticModel semanticModel)
+        private string ResolveFullTypeName(TypeSyntax typeSyntax, SemanticModel semanticModel, string currentFile, DependencyInfo dependencyInfo)
         {
-            // Start with the type name from the syntax
+            var typeInfo = semanticModel.GetTypeInfo(typeSyntax);
+            //if (typeInfo.Type != null)
+            //{
+            //    return typeInfo.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            //}
+
             string typeName = typeSyntax.ToString();
+            var usings = dependencyInfo.FileToUsings[currentFile];
 
-            // Get the containing symbol (could be a namespace, class, or method)
-            var containingSymbol = semanticModel.GetEnclosingSymbol(typeSyntax.SpanStart);
-
-            while (containingSymbol != null)
+            foreach (var usingNamespace in usings)
             {
-                if (containingSymbol is INamespaceSymbol || containingSymbol is INamedTypeSymbol)
+                string fullTypeName = $"{usingNamespace}.{typeName}";
+                if (dependencyInfo.FullTypeNameToDeclaration.ContainsKey(fullTypeName) ||
+                    dependencyInfo.FullEnumNameToEnumDeclaration.ContainsKey(fullTypeName))
                 {
-                    // Prepend the containing namespace or type name
-                    typeName = $"{containingSymbol.Name}.{typeName}";
+                    return fullTypeName;
                 }
-
-                // Move up to the parent symbol
-                containingSymbol = containingSymbol.ContainingSymbol;
             }
 
             return typeName;
         }
-        private void AddDependencyIfPresent(string fullTypeName, HashSet<string> specificDependencies, HashSet<string> allDependencies, Dictionary<string, ClassDeclarationSyntax> fullClassNameToClassDeclaration, Dictionary<string, EnumDeclarationSyntax> fullEnumNameToEnumDeclaration)
-        {
-            // Remove any generic type arguments if present
-            int indexOfOpenBracket = fullTypeName.IndexOf('<');
-            if (indexOfOpenBracket != -1)
-            {
-                fullTypeName = fullTypeName.Substring(0, indexOfOpenBracket);
-            }
 
-            if (fullClassNameToClassDeclaration.ContainsKey(fullTypeName) || fullEnumNameToEnumDeclaration.ContainsKey(fullTypeName))
+        private string ResolveFullTypeName(ITypeSymbol typeSymbol, string currentFile, DependencyInfo dependencyInfo)
+        {
+            if (typeSymbol != null)
+            {
+                return typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            }
+            return string.Empty;
+        }
+
+        private void AddDependencyIfPresent(string fullTypeName, HashSet<string> specificDependencies, HashSet<string> allDependencies, DependencyInfo dependencyInfo)
+        {
+            if (dependencyInfo.FullTypeNameToDeclaration.ContainsKey(fullTypeName) ||
+                dependencyInfo.FullEnumNameToEnumDeclaration.ContainsKey(fullTypeName))
             {
                 specificDependencies.Add(fullTypeName);
                 allDependencies.Add(fullTypeName);
             }
         }
 
-        private static string GetNamespace(SyntaxNode node)
+        private static string GetFullTypeName(TypeDeclarationSyntax typeDeclaration)
         {
-            var namespaceDeclaration = node.Ancestors().OfType<NamespaceDeclarationSyntax>().FirstOrDefault();
-            if (namespaceDeclaration != null) return namespaceDeclaration?.Name.ToString() ?? string.Empty;
-            var fileScopedNamespaceDeclaration = node.Ancestors().OfType<FileScopedNamespaceDeclarationSyntax>().FirstOrDefault();
-            return fileScopedNamespaceDeclaration?.Name.ToString() ?? string.Empty;
-        }
-
-        private static string GetFullClassName(ClassDeclarationSyntax classDeclaration)
-        {
-            var namespaceName = GetNamespace(classDeclaration);
-            return string.IsNullOrEmpty(namespaceName) ? classDeclaration.Identifier.Text : $"{namespaceName}.{classDeclaration.Identifier.Text}";
+            var namespaceName = GetNamespace(typeDeclaration);
+            return string.IsNullOrEmpty(namespaceName) ? typeDeclaration.Identifier.Text : $"{namespaceName}.{typeDeclaration.Identifier.Text}";
         }
 
         private static string GetFullEnumName(EnumDeclarationSyntax enumDeclaration)
@@ -280,18 +241,12 @@ namespace Goat.Utility.Merlin.Lib
             return string.IsNullOrEmpty(namespaceName) ? enumDeclaration.Identifier.Text : $"{namespaceName}.{enumDeclaration.Identifier.Text}";
         }
 
-        private static string GetFullTypeName(ISymbol symbol, TypeSyntax typeSyntax)
+        private static string GetNamespace(SyntaxNode node)
         {
-            if (symbol != null && symbol is INamedTypeSymbol namedTypeSymbol)
-            {
-                return namedTypeSymbol.ToDisplayString();
-            }
-            else
-            {
-                var namespaceName = GetNamespace(typeSyntax);
-                // If symbol is null, try to get the name directly from the syntax
-                return string.IsNullOrEmpty(namespaceName) ? typeSyntax.ToString() : $"{namespaceName}.{typeSyntax.ToString()}";
-            }
+            var namespaceDeclaration = node.Ancestors().OfType<NamespaceDeclarationSyntax>().FirstOrDefault();
+            if (namespaceDeclaration != null) return namespaceDeclaration.Name.ToString();
+            var fileScopedNamespaceDeclaration = node.Ancestors().OfType<FileScopedNamespaceDeclarationSyntax>().FirstOrDefault();
+            return fileScopedNamespaceDeclaration?.Name.ToString() ?? string.Empty;
         }
     }
 }
