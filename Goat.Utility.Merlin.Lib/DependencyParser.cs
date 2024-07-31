@@ -2,11 +2,25 @@
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
+using System.Linq;
 
 namespace Goat.Utility.Merlin.Lib
 {
     public class DependencyParser
     {
+
+        private static readonly HashSet<string> BasicTypes = new HashSet<string>
+        {
+            "bool", "byte", "sbyte", "char", "decimal", "double", "float", "int", "uint",
+            "long", "ulong", "object", "short", "ushort", "string", "DateTime", "TimeSpan",
+            "Guid", "DateTimeOffset", "System.Boolean", "System.Byte", "System.SByte",
+            "System.Char", "System.Decimal", "System.Double", "System.Single", "System.Int32",
+            "System.UInt32", "System.Int64", "System.UInt64", "System.Object", "System.Int16",
+            "System.UInt16", "System.String", "System.DateTime", "System.TimeSpan",
+            "System.Guid", "System.DateTimeOffset"
+        };
+
+
         private readonly ILogger logger;
 
         public DependencyParser(ILogger logger)
@@ -73,6 +87,12 @@ namespace Goat.Utility.Merlin.Lib
                     var fullEnumName = GetFullEnumName(enumDeclaration);
                     dependencyInfo.FullEnumNameToEnumDeclaration[fullEnumName] = enumDeclaration;
                     dependencyInfo.FullTypeNameToFile[fullEnumName] = file;
+
+                    if (string.Equals(enumDeclaration.Identifier.Text, typeName, StringComparison.InvariantCultureIgnoreCase) ||
+                        string.Equals(fullEnumName, typeName, StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        AddDependencyIfPresent(fullEnumName, dependencyInfo.Candidates, dependencyInfo.AllDependencies, dependencyInfo);
+                    }
                 }
             }
 
@@ -145,9 +165,15 @@ namespace Goat.Utility.Merlin.Lib
             }
         }
 
+
         private void AnalyzeTypeSyntax(TypeSyntax typeSyntax, SemanticModel semanticModel, HashSet<string> specificDependencies,
             HashSet<string> allDependencies, string currentFile, DependencyInfo dependencyInfo, IReadOnlyList<string> allFiles)
         {
+            if (typeSyntax == null)
+            {
+                return;
+            }
+
             var typeInfo = semanticModel.GetTypeInfo(typeSyntax);
             if (typeInfo.Type?.SpecialType == SpecialType.System_Void)
             {
@@ -173,29 +199,72 @@ namespace Goat.Utility.Merlin.Lib
             }
 
             // Handle generic types
-            if (typeInfo.Type is INamedTypeSymbol namedTypeSymbol && namedTypeSymbol.IsGenericType)
+            if (typeSyntax is GenericNameSyntax genericNameSyntax)
+            {
+                foreach (var typeArgument in genericNameSyntax.TypeArgumentList.Arguments)
+                {
+                    AnalyzeTypeSyntax(typeArgument, semanticModel, specificDependencies, allDependencies, currentFile, dependencyInfo, allFiles);
+                }
+            }
+            else if (typeInfo.Type is INamedTypeSymbol namedTypeSymbol && namedTypeSymbol.IsGenericType)
             {
                 foreach (var typeArgument in namedTypeSymbol.TypeArguments)
                 {
-                    string fullTypeArgumentName = ResolveFullTypeName(typeArgument, currentFile, dependencyInfo);
-                    if (!string.IsNullOrEmpty(fullTypeArgumentName))
+                    var typeArgumentSyntax = typeArgument.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() as TypeSyntax;
+                    if (typeArgumentSyntax != null)
                     {
-                        AddDependencyIfPresent(fullTypeArgumentName, specificDependencies, allDependencies, dependencyInfo);
+                        AnalyzeTypeSyntax(typeArgumentSyntax, semanticModel, specificDependencies, allDependencies, currentFile, dependencyInfo, allFiles);
                     }
                 }
             }
         }
 
+        private bool IsBasicTypeOrNullable(string typeName)
+        {
+            if (BasicTypes.Contains(typeName))
+            {
+                return true;
+            }
+
+            // Check for nullable types
+            if (typeName.StartsWith("System.Nullable<") && typeName.EndsWith(">"))
+            {
+                string innerType = typeName.Substring(16, typeName.Length - 17);
+                return BasicTypes.Contains(innerType);
+            }
+
+            return false;
+        }
         private string ResolveFullTypeName(TypeSyntax typeSyntax, SemanticModel semanticModel, string currentFile, DependencyInfo dependencyInfo)
         {
             var typeInfo = semanticModel.GetTypeInfo(typeSyntax);
             //if (typeInfo.Type != null)
             //{
+                
             //    return typeInfo.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             //}
 
             string typeName = typeSyntax.ToString();
+
+            if (IsBasicTypeOrNullable(typeName))
+            {
+                return string.Empty;
+            }
+
+            // Handle generic types
+            if (typeSyntax is GenericNameSyntax genericNameSyntax)
+            {
+                var genericTypeName = genericNameSyntax.Identifier.Text;
+                var typeArguments = string.Join(", ", genericNameSyntax.TypeArgumentList.Arguments.Select(arg => ResolveFullTypeName(arg, semanticModel, currentFile, dependencyInfo)));
+                typeName = $"{genericTypeName}<{typeArguments}>";
+            }
+
             var usings = dependencyInfo.FileToUsings[currentFile];
+            var currentNamespace = GetNamespace(typeSyntax);
+            var rootNamespace = string.Join(".", currentNamespace.Split(".", StringSplitOptions.None)[..^1]);
+            
+            usings.Add(currentNamespace);
+            usings.Add(rootNamespace);
 
             foreach (var usingNamespace in usings)
             {
