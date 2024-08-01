@@ -7,7 +7,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Merlin", "Merlin\Merlin.csp
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Goat.Utility.Merlin.Lib", "Goat.Utility.Merlin.Lib\Goat.Utility.Merlin.Lib.csproj", "{1037BEFE-0A0C-49CF-8C39-F049266462FE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Goat.Utility.Merlin.Lib.Tests", "Goat.Utility.Merlin.Lib.Tests\Goat.Utility.Merlin.Lib.Tests.csproj", "{4E94BBC8-A9FC-4CFF-8AFD-779C70C9111F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Goat.Utility.Merlin.Lib.Tests", "Goat.Utility.Merlin.Lib.Tests\Goat.Utility.Merlin.Lib.Tests.csproj", "{4E94BBC8-A9FC-4CFF-8AFD-779C70C9111F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Éléments de solution", "Éléments de solution", "{C25A01C4-E2D4-473E-8CB5-C06199F5CDF2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

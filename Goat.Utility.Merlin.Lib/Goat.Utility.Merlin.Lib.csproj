@@ -13,7 +13,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="prompt.txt">
+    <None Update="header.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="instructions.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

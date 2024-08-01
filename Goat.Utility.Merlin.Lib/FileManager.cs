@@ -78,15 +78,16 @@ namespace Goat.Utility.Merlin.Lib
 
         private async Task WriteFileHeader(StreamWriter writer, List<string> files)
         {
-            var filename = "prompt.txt";
-            if (!File.Exists(filename))
+            #region header
+
+            var headerFilename = "header.txt";
+            if (!File.Exists(headerFilename))
             {
-                filename = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, filename);
+                headerFilename = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, headerFilename);
             }
-            var prompt = await File.ReadAllTextAsync(filename);
+            var headerRaw =  await File.ReadAllTextAsync(headerFilename);
             var normalizedFiles = NormalizeFileNames(Directory.GetCurrentDirectory(), files.ToArray()).ToArray();
-            var headerContent = string.Format(prompt,
-                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+            var headerContent = string.Format(headerRaw, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                 files.Count,
                 string.Join("\n", normalizedFiles)
             );
@@ -95,7 +96,23 @@ namespace Goat.Utility.Merlin.Lib
             {
                 await writer.WriteLineAsync($"//@Header {line.TrimEnd()}");
             }
-            await writer.WriteLineAsync();
+
+            #endregion
+            #region intructions
+
+            var instructionsFilename = "instructions.txt";
+            if (!File.Exists(instructionsFilename))
+            {
+                instructionsFilename = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, instructionsFilename);
+            }
+            var instructionsRaw = await File.ReadAllTextAsync(instructionsFilename);
+            
+            foreach (var line in instructionsRaw.Split('\n'))
+            {
+                await writer.WriteLineAsync($"//@Instruction {line.TrimEnd()}");
+            }
+
+            #endregion
         }
 
         public async Task ExtractFilesAsync(string inputFile, string outputDirectory, string encoding)
@@ -109,6 +126,11 @@ namespace Goat.Utility.Merlin.Lib
             while ((line = await reader.ReadLineAsync()) != null)
             {
                 if (line.StartsWith("//@Header"))
+                {
+                    continue; // Ignore header lines
+                }
+
+                if (line.StartsWith("//@Instruction"))
                 {
                     continue; // Ignore header lines
                 }
