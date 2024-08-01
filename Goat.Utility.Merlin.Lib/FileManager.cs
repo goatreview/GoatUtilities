@@ -31,7 +31,19 @@ namespace Goat.Utility.Merlin.Lib
             {
                 var segments = file.Split(new[] { @"\", @"/" }, StringSplitOptions.None);
                 var currentDirectory = sourceDirectory.Split(new[] { @"\", @"/" }, StringSplitOptions.None);
-                var fileName = string.Join(@"/", segments.Skip(currentDirectory.Length));
+                var minLen = int.Min(segments.Length, currentDirectory.Length);
+                var idx = minLen;
+                for (int i = 0; i < minLen; i++)
+                {
+                    var segment = segments[i];
+                    var directory = currentDirectory[i];
+                    if (segment != directory)
+                    {
+                        idx = i + 1;
+                        break;
+                    }
+                }
+                var fileName = string.Join(@"/", segments.Skip(idx));
                 yield return fileName;
             }
         }
@@ -56,9 +68,9 @@ namespace Goat.Utility.Merlin.Lib
 
             foreach (var file in files.OrderBy(x=>x))
             {
-                var relativePath = Path.GetRelativePath(Directory.GetCurrentDirectory(), file);
-                var segments = relativePath.Split(new[] { @"\", @"/" }, StringSplitOptions.None);
-                await writer.WriteLineAsync($"//@FileName {string.Join(@"/",segments)}");
+
+                var relativePath = NormalizeFileNames(Directory.GetCurrentDirectory(), file).Single();
+                await writer.WriteLineAsync($"//@FileName {relativePath}");
                 await writer.WriteLineAsync(await File.ReadAllTextAsync(file, Encoding.GetEncoding(encoding)));
                 logger.LogInformation($"Merged file: {relativePath}");
             }
@@ -72,10 +84,11 @@ namespace Goat.Utility.Merlin.Lib
                 filename = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, filename);
             }
             var prompt = await File.ReadAllTextAsync(filename);
+            var normalizedFiles = NormalizeFileNames(Directory.GetCurrentDirectory(), files.ToArray()).ToArray();
             var headerContent = string.Format(prompt,
                 DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                 files.Count,
-                string.Join("\n//@Header * ", files.Select(f => Path.GetRelativePath(Directory.GetCurrentDirectory(), f)))
+                string.Join("\n", normalizedFiles)
             );
 
             foreach (var line in headerContent.Split('\n'))
