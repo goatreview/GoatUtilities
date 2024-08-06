@@ -47,13 +47,13 @@ namespace Merlin
 
         public static void UnregisterFromPath()
         {
-            string path = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine) ?? string.Empty;
+            string path = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? string.Empty;
             string appDir = AppDomain.CurrentDomain.BaseDirectory;
 
             if (path.Contains(appDir))
             {
                 path = path.Replace(appDir, "").Replace(";;", ";").TrimEnd(';');
-                Environment.SetEnvironmentVariable("PATH", path, EnvironmentVariableTarget.Machine);
+                Environment.SetEnvironmentVariable("PATH", path, EnvironmentVariableTarget.User);
 
                 // Notify other processes of environment change
                 UIntPtr result;
