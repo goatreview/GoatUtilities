@@ -19,8 +19,8 @@ namespace Merlin
         [Option('o', "output", Required = true, HelpText = "Output file path for the merged content")]
         public required string OutputFile { get; set; }
 
-        [Option('c', "class", Required = false, HelpText = "Class name to retrieve")]
-        public string? BaseClass { get; set; }
+        [Option('c', "classes", Required = false, HelpText = "Class names to retrieve (e.g. MyClass, Mybase)")]
+        public IEnumerable<string>? BaseClasses { get; set; }
 
         [Option('p', "patterns", Required = false, HelpText = "File patterns to include/exclude (e.g. *.cs, !*Test.cs)")]
         public IEnumerable<string>? Patterns { get; set; }

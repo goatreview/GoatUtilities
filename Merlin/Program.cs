@@ -1,6 +1,7 @@
 ﻿using CommandLine;
 using Goat.Utility.Merlin.Lib;
 using Merlin;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
 using System.Text;
 
@@ -61,20 +62,33 @@ static async Task<int> MergeFilesAsync(MergeOptions opts,ILogger logger)
     try
     {
         var files = FileManager.GetFilesToMerge(opts.SourceDirectory, opts.Patterns ?? []);
-        
-        if (!string.IsNullOrWhiteSpace(opts.BaseClass))
-        {
-            var dependencyParser = new DependencyParser(logger);
-            var dependencyInfo = dependencyParser.GetTypeDependencies(files, opts.BaseClass!);
+        var baseClasses = opts.BaseClasses ?? [];
+        var hashSet = new HashSet<string>();
+        bool hasBaseClasses = false;
+        foreach (var baseClass in baseClasses) {
 
-            files = dependencyInfo.AllDependencies
-                .Select(@class => dependencyInfo.FullTypeNameToFile[@class])
-                .Distinct()
-                .ToList();
+            if (!string.IsNullOrWhiteSpace(baseClass))
+            {
+                hasBaseClasses = true;
 
-
+                var dependencyParser = new DependencyParser(logger);
+                var dependencyInfo = dependencyParser.GetTypeDependencies(files, baseClass!);
+                
+                hashSet.UnionWith(
+                    dependencyInfo.AllDependencies
+                        .Select(@class => dependencyInfo.FullTypeNameToFile[@class])
+                        .Distinct()
+                    
+                    );
+                    
+            }
         }
-    
+
+        if (hasBaseClasses)
+        {
+            files = hashSet.ToList();
+        }
+
         var outputFile = opts.OutputFile;
         bool hasNoExtension = string.IsNullOrEmpty(Path.GetExtension(outputFile));
         if (hasNoExtension)
